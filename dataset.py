@@ -57,6 +57,10 @@ class InputExample:
     concept_ids: List[int]
     cpt_to_cpt: dict
     cpt_wiz_fct: dict
+    adj_q2others: List[List[int]]
+    adj_cpt2cpt: List[List[int]]
+    adj_cpt2fct: List[List[int]]
+    graph_mask: List[int]
     label: Optional[str]
 
 
@@ -66,19 +70,15 @@ class InputFeatures:
     A single set of features of data.
     """
     example_id: str
-    input_ids: List[List[int]]
-    attention_mask: Optional[List[List[int]]]
-    token_type_ids: Optional[List[List[int]]]
-    #fact_ids: List[List[int]]  
-    #fact_mask: Optional[List[List[int]]]
-    #fact_type: Optional[List[List[int]]]
+    input_ids: List[int]
+    attention_mask: List[int]
+    fact_input_ids: List[List[int]]
+    fact_attention_mask: List[List[int]]
     concept_ids: List[int]
-    #cpt2cpt_info: List[List[int]]   #src, dst, (rel)
-    #cpt2fct_info: List[List[int]]   #src, dst
-    adj_cpt2cpt: List[List[int]]    #(n_nodes, n_nodes)
-    adj_cpt2fct: List[List[int]]    #(n_nodes, n_nodes)
-    graph_mask: List[int]           #(n_nodes)    
-    #num_actual: int           #num_cpt, cptrel, fct_rel
+    adj_q2others: List[List[int]]
+    adj_cpt2cpt: List[List[int]]
+    adj_cpt2fct: List[List[int]]
+    graph_mask: List[int]
     label: Optional[int]
 
 class Split(Enum):
@@ -100,8 +100,8 @@ class MyDataset(Dataset):
         tokenizer: PreTrainedTokenizer,
         task: str,  #'creak' / 'csqa2'
         max_seq_length: Optional[int] = None,
-        max_cpt_num: Optional[int] = None,
-        max_fct_num: Optional[int] = None,
+        max_cpt_num: int = 20,
+        max_fct_num: int = 5,
         overwrite_cache = False,
         mode: Split = Split.train,
     ):
@@ -134,7 +134,7 @@ class MyDataset(Dataset):
                     examples = processor.get_train_examples(task_data_dir)
                 logger.info(f"Training examples: {len(examples)}")
                 features = convert_examples_to_features(
-                    examples, label_list, max_seq_length, max_cpt_num, max_fct_num,tokenizer
+                    examples, label_list, max_seq_length, max_cpt_num, max_fct_num, tokenizer
                 )
                 logger.info(f"Saving features into cached file {cached_features_file}")
                 torch.save(features, cached_features_file)
@@ -145,16 +145,20 @@ class MyDataset(Dataset):
 
     def __getitem__(self, index):
         example = self.features[index]
+        concept_ids = example.concept_ids
         input_ids = example.input_ids
         attention_mask = example.attention_mask
-        token_type_ids = example.token_type_ids
-        concept_ids = example.concept_ids
+        fact_input_ids = example.fact_input_ids
+        fact_attention_mask = example.fact_attention_mask
+        adj_q2others = example.adj_q2others
         adj_cpt2cpt = example.adj_cpt2cpt
         adj_cpt2fct = example.adj_cpt2fct
         graph_mask = example.graph_mask
         label = example.label
-        return {"input_ids": input_ids, "attention_mask": attention_mask, "token_type_ids": token_type_ids,
+        return {"input_ids": input_ids, "attention_mask": attention_mask,
+            "fact_input_ids": fact_input_ids, "fact_attention_mask": fact_attention_mask,
                 "concept_ids":concept_ids, "adj_cpt2cpt":adj_cpt2cpt, "adj_cpt2fct":adj_cpt2fct, "graph_mask":graph_mask,
+            "adj_q2others": adj_q2others,
                 "label": label}
 
 
@@ -264,11 +268,15 @@ class CSQA2Processor(DataProcessor):
                 InputExample(
                     example_id= str(idx),
                     question = line["question"],
-                    facts = line["filtered_facts"],
+                    filtered_facts = line["filtered_facts"],
                     concept_ids = line["concept_ids"],
                     cpt_to_cpt = line["cpt_to_cpt"],
                     cpt_wiz_fct = line["cpt_wiz_fct"],
-                    label="yes",
+                    adj_q2others = line["adj_q2others"],
+                    adj_cpt2cpt = line["adj_cpt2cpt"],
+                    adj_cpt2fct = line["adj_cpt2fct"],
+                    graph_mask = line["graph_mask"],
+                    label=None,
                 )
                 for idx, line in enumerate(lines)
             ]
@@ -277,10 +285,14 @@ class CSQA2Processor(DataProcessor):
                 InputExample(
                     example_id= str(idx),
                     question = line["question"],
-                    facts = line["filtered_facts"],
+                    filtered_facts = line["filtered_facts"],
                     concept_ids = line["concept_ids"],
                     cpt_to_cpt = line["cpt_to_cpt"],
                     cpt_wiz_fct = line["cpt_wiz_fct"],
+                    adj_q2others = line["adj_q2others"],
+                    adj_cpt2cpt = line["adj_cpt2cpt"],
+                    adj_cpt2fct = line["adj_cpt2fct"],
+                    graph_mask = line["graph_mask"],
                     label=line["ans"],
                 )
                 for idx, line in enumerate(lines)
@@ -334,11 +346,15 @@ class CREAKProcessor(DataProcessor):
                 InputExample(
                     example_id= str(idx),
                     question = line["question"],
-                    facts = line["filtered_facts"],
+                    filtered_facts = line["filtered_facts"],
                     concept_ids = line["concept_ids"],
                     cpt_to_cpt = line["cpt_to_cpt"],
                     cpt_wiz_fct = line["cpt_wiz_fct"],
-                    label="true",
+                    adj_q2others = line["adj_q2others"],
+                    adj_cpt2cpt = line["adj_cpt2cpt"],
+                    adj_cpt2fct = line["adj_cpt2fct"],
+                    graph_mask = line["graph_mask"],
+                    label=None,
                 )
                 for idx, line in enumerate(lines)
             ]
@@ -347,10 +363,14 @@ class CREAKProcessor(DataProcessor):
                 InputExample(
                     example_id= str(idx),
                     question = line["question"],
-                    facts = line["filtered_facts"],
+                    filtered_facts = line["filtered_facts"],
                     concept_ids = line["concept_ids"],
                     cpt_to_cpt = line["cpt_to_cpt"],
                     cpt_wiz_fct = line["cpt_wiz_fct"],
+                    adj_q2others = line["adj_q2others"],
+                    adj_cpt2cpt = line["adj_cpt2cpt"],
+                    adj_cpt2fct = line["adj_cpt2fct"],
+                    graph_mask = line["graph_mask"],
                     label=line["ans"],
                 )
                 for idx, line in enumerate(lines)
@@ -379,84 +399,27 @@ def convert_examples_to_features(
         if ex_index % 1000 == 0:
             logger.info(f"Converting example {ex_index} of {len(examples)} into features")
         
-        total_inputs = []
-        question_inputs = tokenizer(example.question, max_length=max_seq_length, truncation=True, padding='max_length')
-        #input_ids = question_inputs["input_ids"]
-        #attention_mask = question_inputs["attention_mask"] if "attention_mask" in question_inputs else None
-        #token_type_ids = question_inputs["token_type_ids"] if "token_type_ids" in question_inputs else None
-        total_inputs.append(question_inputs) 
-        for _, fact in enumerate(example.filtered_facts):
-            text_a = fact
-            inputs = tokenizer(text_a, None, add_special_tokens=True, max_length=max_seq_length, truncation='longest_first',
-                padding='max_length', return_attention_mask=True, return_token_type_ids=True)
-            
-            #if "num_truncated_tokens" in inputs and inputs["num_truncated_tokens"] > 0:
-            #    logger.info(f"Attention! You are truncating tokens!!")
-
-            total_inputs.append(inputs)
-
-
-        input_ids = [x["input_ids"] for x in total_inputs]
-        attention_mask = (
-            [x["attention_mask"] for x in total_inputs] if "attention_mask" in total_inputs[0] else None
+        question_inputs = tokenizer(
+            example.question, max_length=max_seq_length, truncation=True, padding="max_length"
         )
-        token_type_ids = (
-            [x["token_type_ids"] for x in total_inputs] if "token_type_ids" in total_inputs[0] else None
+        fact_texts = (example.filtered_facts + [""] * max_fct_num)[:max_fct_num]
+        fact_inputs = tokenizer(
+            fact_texts, max_length=max_seq_length, truncation=True, padding="max_length"
         )
 
-        n_total_nodes = max_cpt_num+max_fct_num
-        adj_cpt2cpt = np.zeros((n_total_nodes, n_total_nodes), dtype=int)
-        adj_cpt2fct = np.zeros((n_total_nodes, n_total_nodes), dtype=int)
-        graph_mask = [0]*n_total_nodes
-        cpt2cpt_rel = len(example.cpt_to_cpt["src"])
-        cpt2fct_rel = len(example.cpt_wiz_fct["src"])
-        for idx in range(n_total_nodes):
-            adj_cpt2cpt[idx][idx], adj_cpt2fct[idx][idx] = 1, 1
-        for idx in range(cpt2cpt_rel):
-            src, dst = example.cpt_to_cpt["src"][idx], example.cpt_to_cpt["dst"][idx]
-            adj_cpt2cpt[src][dst] = 1
-        for idx in range(cpt2fct_rel):
-            src, dst = example.cpt_wiz_fct["src"][idx], example.cpt_wiz_fct["dst"][idx]
-            adj_cpt2fct[src][dst], adj_cpt2fct[dst][src] = 1, 1
-        adj_cpt2cpt = adj_cpt2cpt.tolist()
-        adj_cpt2fct = adj_cpt2fct.tolist()
-
-        concept_ids = example.concept_ids
-        #num_actual = []
-        cpts = concept_ids.copy()
-        while -1 in cpts: cpts.remove(-1)
-        num_actual = len(cpts)
-        graph_mask[:num_actual+max_fct_num] = [1]*(num_actual+max_fct_num)
-        
-
-        #num_actual.append(truncate_pad_list(example.cpt_to_cpt["src"],max_cptrel_num)[1])
-        #num_actual.append(truncate_pad_list(example.cpt_wiz_fct["src"],max_fctrel_num)[1])
-        #cpt2cpt_info =[
-        #        truncate_pad_list(example.cpt_to_cpt["src"],max_cptrel_num)[0], 
-        #        truncate_pad_list(example.cpt_to_cpt["dst"],max_cptrel_num)[0], 
-                #truncate_pad_list(example.cpt_to_cpt["rel"],max_cptrel_num)[0]
-        #        ]
-        #cpt2fct_info = [
-        #        truncate_pad_list(example.cpt_wiz_fct["src"],max_fctrel_num)[0], 
-        #        truncate_pad_list(example.cpt_wiz_fct["dst"],max_fctrel_num)[0]]
-
-        label = label_map[example.label]
+        label = label_map[example.label] if example.label is not None else None
         features.append(
             InputFeatures(
                 example_id = str(ex_index),
-                input_ids = input_ids,
-                attention_mask = attention_mask,
-                token_type_ids = token_type_ids,
-                #fact_ids = fact_ids,
-                #fact_mask = fact_mask,
-                #fact_type = fact_type,
-                concept_ids = concept_ids,
-                adj_cpt2cpt = adj_cpt2cpt,
-                adj_cpt2fct = adj_cpt2fct,
-                graph_mask = graph_mask,
-                #cpt2cpt_info = cpt2cpt_info,
-                #cpt2fct_info = cpt2fct_info,
-                #num_actual = num_actual,
+                input_ids=question_inputs["input_ids"],
+                attention_mask=question_inputs["attention_mask"],
+                fact_input_ids=fact_inputs["input_ids"],
+                fact_attention_mask=fact_inputs["attention_mask"],
+                concept_ids=example.concept_ids,
+                adj_q2others=example.adj_q2others,
+                adj_cpt2cpt=example.adj_cpt2cpt,
+                adj_cpt2fct=example.adj_cpt2fct,
+                graph_mask=example.graph_mask,
                 label=label
             )
         )

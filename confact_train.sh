@@ -12,12 +12,10 @@ OUTPUT="${MODEL}_${DATA}_lr${LR}_bs${PD_BS}_ml${ML}_seed${SEED}"
 
 python run_confact.py \
   --task ${DATA} \
-  --train_path data/${DATA}/graph/train_graph_numnode20.jsonl \
-  --dev_path data/${DATA}/graph/dev_graph_numnode20.jsonl \
-  --test_path data/${DATA}/graph/dev_graph_numnode20.jsonl \
+  --data_dir data \
   --num_train_epochs 5 \
   --save_strategy epoch \
-  --evaluation_strategy epoch \
+  --eval_strategy epoch \
   --load_best_model_at_end true \
   --model_name_or_path ${MODEL} \
   --max_seq_length ${ML} \
@@ -28,5 +26,4 @@ python run_confact.py \
   --do_train \
   --do_eval \
   --do_predict \
-  --seed ${SEED} \
-  --contra_path data/${DATA}/graph/contrast_graph_numnode20.jsonl
+  --seed ${SEED}

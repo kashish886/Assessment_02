@@ -22,7 +22,6 @@ from typing import Optional
 import numpy as np
 import torch
 import transformers
-import dgl
 from transformers.trainer_utils import get_last_checkpoint
 from transformers import (
     AutoConfig,
@@ -34,7 +33,6 @@ from transformers import (
     default_data_collator,
     set_seed,
 )
-from transformers.integrations import WandbCallback, rewrite_logs
 
 from model.modeling_v3 import MyConFact_Deberta
 from dataset import MyDataset, Split
@@ -50,8 +48,9 @@ class ModelArguments:
     model_name_or_path: str = field(
         metadata={"help": "Path to pretrained model or model identifier from huggingface.co/models"}
     )
-    model_type: str = field(
-        metadata={"help": "Path to pretrained model or model identifier from huggingface.co/models"}
+    model_type: Optional[str] = field(
+        default=None,
+        metadata={"help": "Optional model type (the implementation uses DeBERTa)"}
     )
     config_name: Optional[str] = field(
         default=None, metadata={"help": "Pretrained config name or path if not the same as model_name"}
@@ -98,27 +97,8 @@ class DataTrainingArguments:
             "than this will be truncated, sequences shorter will be padded."
         },
     )
-    max_fact_length: Optional[int] = field(
-        default=512,
-        metadata={
-            "help": "The maximum total input fact length after tokenization. If passed, sequences longer "
-            "than this will be truncated, sequences shorter will be padded."
-        },
-    )
-    max_cptrel_num: Optional[int] = field(
-        default=50,
-        metadata={
-            "help": "The maximum total input sequence length after tokenization. If passed, sequences longer "
-            "than this will be truncated, sequences shorter will be padded."
-        },
-    )
-    max_fctrel_num: Optional[int] = field(
-        default=20,
-        metadata={
-            "help": "The maximum total input sequence length after tokenization. If passed, sequences longer "
-            "than this will be truncated, sequences shorter will be padded."
-        },
-    )
+    max_cpt_num: int = field(default=20, metadata={"help": "Concept nodes per graph"})
+    max_fct_num: int = field(default=5, metadata={"help": "Fact nodes per graph"})
     pad_to_max_length: bool = field(
         default=False,
         metadata={
@@ -183,7 +163,6 @@ def main():
 
     ## Set seed before initializing model.
     set_seed(training_args.seed)
-    dgl.seed(training_args.seed)
 
 
     ## Setting up model and tokenizer configs
@@ -200,7 +179,7 @@ def main():
         revision=model_args.model_revision,
         use_auth_token=True if model_args.use_auth_token else None,
     )
-    model = MyConFact_RGCN.from_pretrained(
+    model = MyConFact_Deberta.from_pretrained(
         model_args.model_name_or_path,
         config = config,
         cache_dir = model_args.cache_dir,
@@ -233,9 +212,8 @@ def main():
             tokenizer = tokenizer,
             task = data_args.task,
             max_seq_length = max_seq_length,
-            max_fact_length = data_args.max_fact_length,
-            max_cptrel_num = data_args.max_cptrel_num,
-            max_fctrel_num = data_args.max_fctrel_num,
+            max_cpt_num = data_args.max_cpt_num,
+            max_fct_num = data_args.max_fct_num,
             overwrite_cache = data_args.overwrite_cache,
             mode = Split.train
             )
@@ -246,9 +224,8 @@ def main():
             tokenizer = tokenizer,
             task = data_args.task,
             max_seq_length = max_seq_length,
-            max_fact_length = data_args.max_fact_length,
-            max_cptrel_num = data_args.max_cptrel_num,
-            max_fctrel_num = data_args.max_fctrel_num,
+            max_cpt_num = data_args.max_cpt_num,
+            max_fct_num = data_args.max_fct_num,
             overwrite_cache = data_args.overwrite_cache,
             mode = Split.dev
             )
@@ -259,9 +236,8 @@ def main():
             tokenizer = tokenizer,
             task = data_args.task,
             max_seq_length = max_seq_length,
-            max_fact_length = data_args.max_fact_length,
-            max_cptrel_num = data_args.max_cptrel_num,
-            max_fctrel_num = data_args.max_fctrel_num,
+            max_cpt_num = data_args.max_cpt_num,
+            max_fct_num = data_args.max_fct_num,
             overwrite_cache = data_args.overwrite_cache,
             mode = Split.test
             )
@@ -271,9 +247,8 @@ def main():
                 tokenizer = tokenizer,
                 task = data_args.task,
                 max_seq_length = max_seq_length,
-                max_fact_length = data_args.max_fact_length,
-                max_cptrel_num = data_args.max_cptrel_num,
-                max_fctrel_num = data_args.max_fctrel_num,
+                max_cpt_num = data_args.max_cpt_num,
+                max_fct_num = data_args.max_fct_num,
                 overwrite_cache = data_args.overwrite_cache,
                 mode = Split.contrast
                 )
@@ -360,28 +335,29 @@ def main():
                     item = id2label[item]
                     writer.write(f"{index}\t{item}\n")
 
-        logger.info("*** Predict: Contrast ***")
-        predictions, labels, metrics = trainer.predict(contra_dataset)
+        if data_args.task == "creak":
+            logger.info("*** Predict: Contrast ***")
+            predictions, labels, metrics = trainer.predict(contra_dataset)
 
-        max_predict_samples = (
-            data_args.max_predict_samples if data_args.max_predict_samples is not None else len(
-                contra_dataset)
-        )
-        metrics["contra_samples"] = min(max_predict_samples,
-                                        len(contra_dataset))
+            max_predict_samples = (
+                data_args.max_predict_samples if data_args.max_predict_samples is not None else len(
+                    contra_dataset)
+            )
+            metrics["contra_samples"] = min(max_predict_samples,
+                                            len(contra_dataset))
 
-        trainer.log_metrics("contra", metrics)
-        trainer.save_metrics("contra", metrics)
+            trainer.log_metrics("contra", metrics)
+            trainer.save_metrics("contra", metrics)
 
-        predictions = np.argmax(predictions, axis=1)
-        output_predict_file = os.path.join(training_args.output_dir,
-                                           "contra_predictions.txt")
-        if trainer.is_world_process_zero():
-            with open(output_predict_file, "w") as writer:
-                writer.write("index\tprediction\n")
-                for index, item in enumerate(predictions):
-                    item = id2label[item]
-                    writer.write(f"{index}\t{item}\n")
+            predictions = np.argmax(predictions, axis=1)
+            output_predict_file = os.path.join(training_args.output_dir,
+                                               "contra_predictions.txt")
+            if trainer.is_world_process_zero():
+                with open(output_predict_file, "w") as writer:
+                    writer.write("index\tprediction\n")
+                    for index, item in enumerate(predictions):
+                        item = id2label[item]
+                        writer.write(f"{index}\t{item}\n")
 
 
     

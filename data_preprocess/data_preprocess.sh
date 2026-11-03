@@ -1,27 +1,21 @@
 
-## Part One: Ground concepts
-'''
-Input file: ../data/dataset_name/train|dev|test
-Output file: ../data/dataset_name/grounded/train|dev|test.grounded.jsonl
-            {"sent": , "ans": , "qc":}
-'''
+set -eu
+
+# Part One: ground concepts.
+# Input: ../data/<dataset>/<split>; output: grounded/<split>.grounded.jsonl.
 python data_preprocess-grounded.py
 
 
 
 ## Part Two: Retrieve facts
-'''
-Input file: ../data/dataset_name/train|dev|test.grounded.jsonl
-Output file: ../data/dataset_name/retrieval/train|dev|test.retrieval.jsonl
-            {"sent": ,"ans": ,"qc": ,ctxs: }
-'''
+# Part Two: retrieve Wikipedia facts.
 python data_preprocess-retrieval.py \
     --model_name_or_path facebook/contriever \
     --passages ../data/wiki/psgs_w100.tsv \
     --passages_embeddings "../data/wiki/wikipedia_embeddings/*" \
     --data_path ../data/ \
     --dataset creak \
-    --output_dir ../data/creak/retrieval \
+    --output_dir ../data/creak/retrieval
 
 python data_preprocess-retrieval.py \
     --model_name_or_path facebook/contriever \
@@ -29,14 +23,11 @@ python data_preprocess-retrieval.py \
     --passages_embeddings "../data/wiki/wikipedia_embeddings/*" \
     --data_path ../data/ \
     --dataset csqa2 \
-    --output_dir ../data/csqa2/retrieval \
+    --output_dir ../data/csqa2/retrieval
 
 
 
 
 ## Part Three: Process and Load graph information
-'''
-Input file: ../data/dataset_name/retrieval/train|dev|test.retrieval.jsonl
-Output file: ../data/dataset_name/graph/train|dev|test_graph_numnode50.jsonl
-'''
+# Part Three: convert retrieved facts and concepts into graphs.
 python data_preprocess-graph.py

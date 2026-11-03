@@ -51,7 +51,7 @@ def embed_queries(args, queries, model, tokenizer):
                     padding=True,
                     truncation=True,
                 )
-                encoded_batch = {k: v.cuda() for k, v in encoded_batch.items()}
+                encoded_batch = {key: value.to(args.device) for key, value in encoded_batch.items()}
                 output = model(**encoded_batch)
                 embeddings.append(output.cpu())
 
@@ -143,6 +143,8 @@ def load_data(data_path):
             for k, example in enumerate(fin):
                 example = json.loads(example)
                 data.append(example)
+    else:
+        raise ValueError(f"Unsupported data file format: {data_path}")
     return data
 
 
@@ -151,8 +153,9 @@ def main(args):
     print(f"Loading model from: {args.model_name_or_path}")
     model, tokenizer, _ = src.contriever.load_retriever(args.model_name_or_path)
     model.eval()
-    model = model.cuda()
-    if not args.no_fp16:
+    args.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = model.to(args.device)
+    if not args.no_fp16 and args.device.type == "cuda":
         model = model.half()
 
     index = src.index.Indexer(args.projection_size, args.n_subquantizers, args.n_bits)
@@ -160,6 +163,10 @@ def main(args):
     # index all passages
     input_paths = glob.glob(args.passages_embeddings)
     input_paths = sorted(input_paths)
+    if not input_paths:
+        raise FileNotFoundError(
+            f"No passage embeddings matched: {args.passages_embeddings}"
+        )
     embeddings_dir = os.path.dirname(input_paths[0])
     index_path = os.path.join(embeddings_dir, "index.faiss")
     if args.save_or_load_index and os.path.exists(index_path):
@@ -177,12 +184,11 @@ def main(args):
     passages = src.data.load_passages(args.passages)
     passage_id_map = {x["id"]: x for x in passages}
 
-    data = args.data_path+args.dataset+'/grounded'+'/*'
-    data_paths = glob.glob(data)
+    data_paths = glob.glob(os.path.join(args.data_path, args.dataset, "grounded", "*"))
     alldata = []
     for path in data_paths:
         print(f'Reading questions from file {path}')
-        mode = path.split('/')[-1].split('.')[0]
+        mode = Path(path).name.split('.')[0]
         data = load_data(path)
         output_path = os.path.join(args.output_dir, mode)
         output_path += '.retrieval.jsonl'

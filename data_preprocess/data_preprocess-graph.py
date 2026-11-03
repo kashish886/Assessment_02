@@ -98,7 +98,7 @@ def concepts_to_graph_info_Part2(data):
     if n_node >= max_cpt_nodes:
         cids = cids[:max_cpt_nodes]
     elif n_node < max_cpt_nodes:
-        paddings = [0] * (max_cpt_nodes-n_node)
+        paddings = [-1] * (max_cpt_nodes-n_node)
         cids += paddings
     n_node = min(n_node, max_cpt_nodes)
     assert max_cpt_nodes == len(cids)
@@ -117,7 +117,7 @@ def concepts_to_graph_info_Part2(data):
     assert len(head) == len(tail) == len(redge)
     data['cpt_to_cpt'] = dict([('src', head),('dst', tail)])
     #data['cpt_to_cpt'] = dict([('src', head),('dst', tail),('rel', redge)])
-    data['concepts'] = [id2concept[id] for id in data['concept_ids']]
+    data['concepts'] = [id2concept[id] if id >= 0 else "" for id in data['concept_ids']]
     return data
 
 def concepts_to_graph_info_Part3(data):
@@ -210,6 +210,12 @@ def concepts_to_graph_info_Part5(data):
     #del data['cpt_wiz_fct']
     return data
 
+def map_records(function, records, num_processes):
+    if os.name == "nt":
+        return list(map(function, records))
+    with Pool(num_processes) as pool:
+        return list(tqdm(pool.imap(function, records), total=len(records)))
+
 def generate_adj_data_from_grounded_concepts(retrieval_path, cpnet_graph_path, cpnet_vocab_path, output_path, num_processes):
     """
     grounded_path: str
@@ -247,28 +253,23 @@ def generate_adj_data_from_grounded_concepts(retrieval_path, cpnet_graph_path, c
 
     
     print(f'Retrieving extra nodes...')
-    with Pool(num_processes) as p:
-        res1 = list(tqdm(p.imap(concepts_to_graph_info_Part1, qa_data), total=len(qa_data)))
+    res1 = map_records(concepts_to_graph_info_Part1, qa_data, num_processes)
     #{ 'question': ,'ans': ,'facts': ,'concept_ids': ,'extra_ids': }
 
     print(f'Retreving concept-level relations...')
-    with Pool(num_processes) as p:
-        res2 = list(tqdm(p.imap(concepts_to_graph_info_Part2, res1), total=len(res1)))
+    res2 = map_records(concepts_to_graph_info_Part2, res1, num_processes)
     #{ 'question': ,'ans': ,'facts': ,'concept_ids': ,'cpt_to_cpt': , 'concepts': }
     
     print(f'Processing multi-level relations...')
-    with Pool(num_processes) as p:
-        res3 = list(tqdm(p.imap(concepts_to_graph_info_Part3, res2), total=len(res2)))
+    res3 = map_records(concepts_to_graph_info_Part3, res2, num_processes)
     #{ 'question': ,'ans':, 'facts': ,'concept_ids': ,'cpt_to_cpt': ,'cpt_wiz_fct': }
 
     print(f'Filtering facts...')
-    with Pool(num_processes) as p:
-        res4 = list(tqdm(p.imap(concepts_to_graph_info_Part4, res3), total=len(res3)))
+    res4 = map_records(concepts_to_graph_info_Part4, res3, num_processes)
     #{ 'question': ,'ans':, 'filtered_facts': ,'concept_ids': ,'cpt_to_cpt': ,'cpt_wiz_fct': }
 
     print(f'Creating adjacency matrix...')
-    with Pool(num_processes) as p:
-        res5 = list(tqdm(p.imap(concepts_to_graph_info_Part5, res4), total=len(res4)))
+    res5 = map_records(concepts_to_graph_info_Part5, res4, num_processes)
     #{ 'question': ,'ans':, 'filtered_facts': ,'concept_ids': ,'adj_cpt2cpt': ,'adj_cpt2fct': , 'graph_mask': }
 
     with open(output_path, 'w') as fout:

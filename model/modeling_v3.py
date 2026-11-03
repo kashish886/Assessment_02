@@ -184,8 +184,6 @@ class MyConFact_Deberta(DebertaV2PreTrainedModel):
 
         ## Facts Encoding
         bsz, n_facts, _ = fact_input_ids.size()
-        for i in range(n_facts):
-            current_fact_output = self.deberta(fact_input_ids[i], attention_mask=fact_attention_mask[i])   #
         flat_fact_ids = fact_input_ids.view(-1, fact_input_ids.size(-1)) if fact_input_ids is not None else None  #(bs*n_fact, fct_length)
         flat_fact_mask = fact_attention_mask.view(-1, fact_attention_mask.size(-1)) if fact_attention_mask is not None else None  #(bs*n_fact, fct_length)
         facts_outputs = self.deberta(flat_fact_ids, attention_mask=flat_fact_mask)

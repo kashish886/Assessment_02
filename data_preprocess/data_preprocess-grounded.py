@@ -1,4 +1,5 @@
 import json
+import os
 import spacy
 from tqdm import tqdm
 from multiprocessing import Pool
@@ -19,6 +20,7 @@ CPNET_VOCAB = '../data/cpnet/concept.txt'
 PATTERN_PATH = '../data/cpnet/matcher_patterns.json'
 nlp = None
 matcher = None
+cpnet_vocab = None
 
 
 
@@ -172,7 +174,7 @@ def ground_question(qa_pair):
     s, a = qa_pair
     question_concepts = ground_mentioned_concepts(nlp, matcher, s)
     if len(question_concepts) == 0:
-        question_concepts = hard_ground(nlp, s, CPNET_VOCAB)  # not very possible
+            question_concepts = hard_ground(nlp, s, cpnet_vocab)
 
     question_concepts = sorted(list(question_concepts))
     return {"sent": s, "ans": a, "qc": question_concepts}
@@ -180,8 +182,11 @@ def ground_question(qa_pair):
 
 
 def load_match(PATTERN_PATH):
+    global cpnet_vocab
     nlp = spacy.load('en_core_web_sm', disable=['ner', 'parser', 'textcat'])
     nlp.add_pipe('sentencizer')
+    with open(CPNET_VOCAB, "r", encoding="utf8") as fin:
+        cpnet_vocab = {line.strip() for line in fin}
     with open(PATTERN_PATH, "r", encoding="utf8") as fin:
         all_patterns = json.load(fin)
     matcher = Matcher(nlp.vocab)
@@ -227,6 +232,8 @@ def extract_concepts(sents, answers, num_processes):
     global nlp, matcher, PATTERN_PATH
     if nlp is None or matcher is None:
         nlp, matcher = load_match(PATTERN_PATH)
+    if os.name == "nt":
+        return [ground_question(pair) for pair in tqdm(zip(sents, answers), total=len(sents))]
     res = []
     with Pool(num_processes) as p:
         res = list(tqdm(p.imap(ground_question, zip(sents, answers)), total=len(sents)))

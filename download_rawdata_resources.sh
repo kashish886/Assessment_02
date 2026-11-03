@@ -1,13 +1,17 @@
+set -eu
+
 # Download ConceptNet
 mkdir -p data/
 mkdir -p data/cpnet/
 echo "Downloading ConceptNet..."
 wget -nc -P data/cpnet/ https://s3.amazonaws.com/conceptnet/downloads/2018/edges/conceptnet-assertions-5.6.0.csv.gz
 cd data/cpnet/
-yes n | gzip -d conceptnet-assertions-5.6.0.csv.gz
+if [ -f conceptnet-assertions-5.6.0.csv.gz ] && [ ! -f conceptnet-assertions-5.6.0.csv ]; then
+	gzip -df conceptnet-assertions-5.6.0.csv.gz
+fi
 # download ConceptNet entity embedding
 echo "Downloading ConceptNet entity embedding..."
-wget https://csr.s3-us-west-1.amazonaws.com/tzw.ent.npy
+wget -nc https://csr.s3-us-west-1.amazonaws.com/tzw.ent.npy
 cd ../../
 
 
@@ -15,14 +19,18 @@ mkdir -p data/wiki
 cd data/wiki
 # Download Wikipedia passages
 echo "Downloading Wikipedia passages"
-wget https://dl.fbaipublicfiles.com/dpr/wikipedia_split/psgs_w100.tsv.gz
+if [ ! -f psgs_w100.tsv.gz ] && [ ! -f psgs_w100.tsv ]; then
+	wget https://dl.fbaipublicfiles.com/dpr/wikipedia_split/psgs_w100.tsv.gz
+fi
 echo "Decompressing Wikipedia passages"
-gzip -d psgs_w100.tsz.gz
+if [ ! -f psgs_w100.tsv ]; then
+	gzip -df psgs_w100.tsv.gz
+fi
 
 # Generate passages embeddings
 ## Here we directly download passages embeddings pre-computed with Contriever or Contriever-msmarco
 ### wget https://dl.fbaipublicfiles.com/contriever/embeddings/contriever/wikipedia_embeddings.tar
-wget https://dl.fbaipublicfiles.com/contriever/embeddings/contriever-msmarco/wikipedia_embeddings.tar
+wget -nc https://dl.fbaipublicfiles.com/contriever/embeddings/contriever-msmarco/wikipedia_embeddings.tar
 tar -xvf wikipedia_embeddings.tar
 cd ../../
 
