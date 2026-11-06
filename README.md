@@ -86,7 +86,7 @@ The `.gitignore` excludes datasets, checkpoints, virtual environments, and cache
 
 
 
-
+## Screenshots(Output)
 
 <img width="1600" height="980" alt="WhatsApp Image 2026-11-05 at 7 44 40 PM" src="https://github.com/user-attachments/assets/fd00b590-43d3-4fe0-a0fd-9f1bc3159eae" />
 <img width="1600" height="978" alt="WhatsApp Image 2026-11-05 at 8 19 43 PM" src="https://github.com/user-attachments/assets/6c2e18b4-e807-4295-a979-93b1cc935e27" />
